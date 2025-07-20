@@ -7,7 +7,8 @@ import {
   AlertCircle, 
   CheckCircle,
   Navigation,
-  Crosshair
+  Crosshair,
+  Users
 } from 'lucide-react';
 import { useComplaintsContext } from '../../context/ComplaintsContext';
 
@@ -28,6 +29,8 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCapturingLocation, setIsCapturingLocation] = useState(false);
   const [locationStatus, setLocationStatus] = useState('idle'); // idle, capturing, success, error
+  const [submitError, setSubmitError] = useState('');
+  const [assignedSquad, setAssignedSquad] = useState(null);
 
   const { addComplaint } = useComplaintsContext();
 
@@ -40,20 +43,27 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
     { id: 'suburban', name: 'Suburban', description: 'Outer residential areas' }
   ];
 
-  // Categories for complaints
+  // Categories for complaints - updated to match backend schema
   const categories = [
-    'Road Maintenance',
-    'Street Lighting',
-    'Garbage Collection',
-    'Water Supply',
-    'Sewage',
-    'Public Safety',
-    'Noise Pollution',
-    'Air Quality',
-    'Public Transport',
-    'Parks & Recreation',
-    'Other'
+    'sanitation',
+    'roads', 
+    'water',
+    'electricity',
+    'parks',
+    'traffic',
+    'other'
   ];
+
+  // Category display names
+  const categoryDisplayNames = {
+    'sanitation': 'Sanitation & Garbage',
+    'roads': 'Roads & Infrastructure',
+    'water': 'Water Supply',
+    'electricity': 'Electricity & Lighting',
+    'parks': 'Parks & Recreation',
+    'traffic': 'Traffic & Transportation',
+    'other': 'Other'
+  };
 
   // Capture live location coordinates
   const captureLocation = async () => {
@@ -95,6 +105,9 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
           coordinates: { lat: latitude, lng: longitude }
         }
       }));
+
+      // Determine squad assignment based on location
+      await determineSquadAssignment(latitude, longitude);
 
       setLocationStatus('success');
       
@@ -149,6 +162,37 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
     }
   };
 
+  // Determine squad assignment based on location
+  const determineSquadAssignment = async (lat, lng) => {
+    try {
+      // Check if coordinates fall within any squad's assigned regions
+      if (lat >= 12.9000 && lat <= 13.2000 && lng >= 80.1000 && lng <= 80.4000) {
+        setAssignedSquad({
+          name: 'Squad Alpha',
+          code: 'alpha',
+          description: 'Handles complaints from Chennai region'
+        });
+      } else if (lat >= 18.9000 && lat <= 19.2000 && lng >= 72.7000 && lng <= 73.0000) {
+        setAssignedSquad({
+          name: 'Squad Beta',
+          code: 'beta',
+          description: 'Handles complaints from Mumbai region'
+        });
+      } else if (lat >= 12.8000 && lat <= 13.1000 && lng >= 77.4000 && lng <= 77.7000) {
+        setAssignedSquad({
+          name: 'Squad Gamma',
+          code: 'gamma',
+          description: 'Handles complaints from Bangalore region'
+        });
+      } else {
+        setAssignedSquad(null);
+      }
+    } catch (error) {
+      console.error('Error determining squad assignment:', error);
+      setAssignedSquad(null);
+    }
+  };
+
   // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -171,6 +215,16 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+    
+    // Clear submit error when user makes changes
+    if (submitError) {
+      setSubmitError('');
+    }
+    
+    // Clear squad assignment when location changes
+    if (assignedSquad && name.includes('location')) {
+      setAssignedSquad(null);
     }
   };
 
@@ -231,16 +285,41 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
     }
 
     setIsSubmitting(true);
+    setSubmitError('');
 
     try {
-      await addComplaint(formData);
-      if (onSuccess) {
+      // Check if user is authenticated
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Please log in to submit a complaint');
+      }
+
+      // Prepare the complaint data in the format expected by the backend
+      const complaintData = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        severity: formData.severity,
+        location: formData.location,
+        images: formData.images
+      };
+
+      console.log('Submitting complaint:', complaintData);
+
+      const result = await addComplaint(complaintData);
+      
+      console.log('Complaint submitted successfully:', result);
+      
+      if (onSuccess && typeof onSuccess === 'function') {
         onSuccess();
       }
-      onClose();
+      
+      if (onClose && typeof onClose === 'function') {
+        onClose();
+      }
     } catch (error) {
       console.error('Error submitting complaint:', error);
-      setErrors({ submit: 'Failed to submit complaint. Please try again.' });
+      setSubmitError(error.message || 'Failed to submit complaint. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -282,7 +361,7 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Submit New Complaint</h2>
             <button
-              onClick={() => { if (typeof onClose === 'function') onClose(); }}
+              onClick={() => { if (onClose && typeof onClose === 'function') onClose(); }}
               className="text-gray-400 hover:text-gray-600"
             >
               <Crosshair className="h-6 w-6" />
@@ -291,33 +370,33 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Title */}
-      <div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Complaint Title *
               </label>
-        <input
-          type="text"
+              <input
+                type="text"
                 name="title"
-          value={formData.title}
+                value={formData.title}
                 onChange={handleInputChange}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
                   errors.title ? 'border-red-500' : 'border-gray-300'
                 }`}
-          placeholder="Brief description of the issue"
-        />
+                placeholder="Brief description of the issue"
+              />
               {errors.title && (
                 <p className="mt-1 text-sm text-red-600">{errors.title}</p>
               )}
-      </div>
+            </div>
 
             {/* Description */}
-      <div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Detailed Description *
               </label>
-        <textarea
+              <textarea
                 name="description"
-          value={formData.description}
+                value={formData.description}
                 onChange={handleInputChange}
                 rows={4}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
@@ -328,15 +407,15 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
               {errors.description && (
                 <p className="mt-1 text-sm text-red-600">{errors.description}</p>
               )}
-      </div>
+            </div>
 
             {/* Category and Severity */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Category *
                 </label>
-          <select
+                <select
                   name="category"
                   value={formData.category}
                   onChange={handleInputChange}
@@ -345,10 +424,12 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   }`}
                 >
                   <option value="">Select Category</option>
-            {categories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-            ))}
-          </select>
+                  {categories.map(category => (
+                    <option key={category} value={category}>
+                      {categoryDisplayNames[category]}
+                    </option>
+                  ))}
+                </select>
                 {errors.category && (
                   <p className="mt-1 text-sm text-red-600">{errors.category}</p>
                 )}
@@ -370,25 +451,25 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   <option value="critical">Critical</option>
                 </select>
               </div>
-        </div>
+            </div>
 
             {/* Location Section */}
-        <div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Location *
               </label>
               
               {/* Location Capture Button */}
               <div className="mb-4">
-              <button
-                type="button"
+                <button
+                  type="button"
                   onClick={captureLocation}
                   disabled={isCapturingLocation}
                   className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+                >
                   <Navigation className="h-4 w-4 mr-2" />
                   {isCapturingLocation ? 'Capturing...' : 'Capture My Location'}
-              </button>
+                </button>
                 
                 {/* Location Status */}
                 {getLocationStatusDisplay()}
@@ -400,29 +481,44 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   <div className="flex items-center text-green-800 mb-2">
                     <MapPin className="h-4 w-4 mr-2" />
                     <span className="font-medium">Location Captured</span>
-          </div>
+                  </div>
                   <div className="text-sm text-green-700 space-y-1">
                     <div><strong>Address:</strong> {formData.location.address}</div>
                     <div><strong>Zone:</strong> {zones.find(z => z.id === formData.location.zone)?.name}</div>
                     <div><strong>Coordinates:</strong> {formData.location.coordinates.lat.toFixed(6)}, {formData.location.coordinates.lng.toFixed(6)}</div>
-        </div>
-      </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Squad Assignment Display */}
+              {assignedSquad && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center text-blue-800 mb-2">
+                    <Users className="h-4 w-4 mr-2" />
+                    <span className="font-medium">Squad Assignment</span>
+                  </div>
+                  <div className="text-sm text-blue-700 space-y-1">
+                    <div><strong>Squad:</strong> {assignedSquad.name}</div>
+                    <div><strong>Code:</strong> {assignedSquad.code}</div>
+                    <div><strong>Description:</strong> {assignedSquad.description}</div>
+                  </div>
+                </div>
               )}
 
               {/* Manual Address Input */}
-      <div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Address (Optional - for verification)
                 </label>
-          <input
-            type="text"
+                <input
+                  type="text"
                   name="location.address"
                   value={formData.location.address}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   placeholder="Street address (optional)"
-          />
-        </div>
+                />
+              </div>
 
               {errors.location && (
                 <p className="mt-1 text-sm text-red-600">{errors.location}</p>
@@ -447,10 +543,10 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   </option>
                 ))}
               </select>
-      </div>
+            </div>
 
             {/* Image Upload */}
-      <div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Upload Images (Optional)
               </label>
@@ -471,8 +567,8 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   <p className="text-xs text-gray-500 mt-1">
                     Maximum 5 images, JPG, PNG, GIF up to 5MB each
                   </p>
-              </label>
-            </div>
+                </label>
+              </div>
 
               {/* Preview uploaded images */}
               {formData.images.length > 0 && (
@@ -491,16 +587,16 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                       >
                         ×
                       </button>
-          </div>
+                    </div>
                   ))}
-          </div>
-        )}
-      </div>
+                </div>
+              )}
+            </div>
 
             {/* Error Message */}
-            {errors.submit && (
+            {submitError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-600">{errors.submit}</p>
+                <p className="text-sm text-red-600">{submitError}</p>
               </div>
             )}
 
@@ -508,20 +604,20 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
             <div className="flex justify-end space-x-4">
               <button
                 type="button"
-                onClick={() => { if (typeof onClose === 'function') onClose(); }}
+                onClick={() => { if (onClose && typeof onClose === 'function') onClose(); }}
                 className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
-        <button
-          type="submit"
+              <button
+                type="submit"
                 disabled={isSubmitting}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+              >
                 {isSubmitting ? 'Submitting...' : 'Submit Complaint'}
-        </button>
-      </div>
-    </form>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

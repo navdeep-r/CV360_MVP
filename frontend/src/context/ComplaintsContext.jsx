@@ -175,6 +175,10 @@ export const ComplaintsProvider = ({ children }) => {
     try {
       const token = localStorage.getItem('token');
       
+      if (!token) {
+        throw new Error('Authentication required. Please log in to submit a complaint.');
+      }
+      
       // Prepare form data for API
       const formData = new FormData();
       formData.append('title', complaintData.title);
@@ -190,6 +194,15 @@ export const ComplaintsProvider = ({ children }) => {
         });
       }
 
+      console.log('Sending complaint data to API:', {
+        title: complaintData.title,
+        description: complaintData.description,
+        category: complaintData.category,
+        severity: complaintData.severity,
+        location: complaintData.location,
+        imageCount: complaintData.images?.length || 0
+      });
+
       const response = await fetch(`${API_BASE}/complaints`, {
         method: 'POST',
         headers: {
@@ -198,11 +211,27 @@ export const ComplaintsProvider = ({ children }) => {
         body: formData,
       });
 
+      console.log('API Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to create complaint');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('API Error response:', errorData);
+        
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please log in again.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. You do not have permission to submit complaints.');
+        } else if (response.status === 400) {
+          throw new Error(errorData.error || 'Invalid complaint data. Please check your input.');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        } else {
+          throw new Error(errorData.error || `Failed to submit complaint (${response.status})`);
+        }
       }
 
       const result = await response.json();
+      console.log('API Success response:', result);
       
       // Backend returns { message, complaint, aiSuggestion }
       const newComplaint = result.complaint;
@@ -214,39 +243,46 @@ export const ComplaintsProvider = ({ children }) => {
     } catch (err) {
       console.error('Error creating complaint:', err);
       
-      // If API fails, create a mock complaint for demo
-      const mockComplaint = {
-        _id: `mock${Date.now()}`,
-        title: complaintData.title || 'New Complaint',
-        description: complaintData.description || 'Complaint description',
-        category: complaintData.category || 'general',
-        severity: complaintData.severity || 'medium',
-        status: 'pending',
-        location: complaintData.location || { 
-          address: 'Unknown Location', 
-          zone: 'downtown',
-          coordinates: null
-        },
-        createdAt: new Date().toISOString(),
-        citizenId: { 
-          name: localStorage.getItem('userName') || 'Anonymous', 
-          email: localStorage.getItem('userEmail') || 'anonymous@example.com' 
-        },
-        attachments: [],
-        upvotes: 0,
-        timeline: [
-          {
-            action: 'Complaint submitted',
-            timestamp: new Date().toISOString(),
-            comment: 'Complaint has been submitted and is pending review'
-          }
-        ]
-      };
+      // If it's a network error or server is down, create a mock complaint for demo
+      if (err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed to fetch')) {
+        console.log('Creating mock complaint due to network/server error');
+        
+        const mockComplaint = {
+          _id: `mock${Date.now()}`,
+          title: complaintData.title || 'New Complaint',
+          description: complaintData.description || 'Complaint description',
+          category: complaintData.category || 'other',
+          severity: complaintData.severity || 'medium',
+          status: 'pending',
+          location: complaintData.location || { 
+            address: 'Unknown Location', 
+            zone: 'downtown',
+            coordinates: null
+          },
+          createdAt: new Date().toISOString(),
+          citizenId: { 
+            name: localStorage.getItem('userName') || 'Anonymous', 
+            email: localStorage.getItem('userEmail') || 'anonymous@example.com' 
+          },
+          attachments: [],
+          upvotes: 0,
+          timeline: [
+            {
+              action: 'Complaint submitted',
+              timestamp: new Date().toISOString(),
+              comment: 'Complaint has been submitted and is pending review'
+            }
+          ]
+        };
+        
+        // Add the new complaint to the shared list
+        setComplaints(prev => [mockComplaint, ...prev]);
+        
+        return mockComplaint;
+      }
       
-      // Add the new complaint to the shared list
-      setComplaints(prev => [mockComplaint, ...prev]);
-      
-      return mockComplaint;
+      // Re-throw the error for the UI to handle
+      throw err;
     }
   };
 

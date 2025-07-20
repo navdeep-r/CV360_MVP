@@ -66,6 +66,30 @@ mongoose.connect('mongodb://localhost:27017/cityview360', {
   useUnifiedTopology: true,
 });
 
+// Squad Schema
+const squadSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  code: { type: String, required: true, unique: true }, // e.g., 'alpha', 'beta', 'gamma'
+  description: String,
+  assignedRegions: [{
+    city: String,
+    state: String,
+    coordinates: {
+      center: { lat: Number, lng: Number },
+      bounds: {
+        north: Number,
+        south: Number,
+        east: Number,
+        west: Number
+      }
+    }
+  }],
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  supervisor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
 // User Schema
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -75,6 +99,9 @@ const userSchema = new mongoose.Schema({
   phone: { type: String },
   address: { type: String },
   department: { type: String }, // For officials
+  squad: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad' }, // For officials
+  assignedRegions: [String], // For officials - cities they handle
+  isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -159,6 +186,7 @@ const complaintSchema = new mongoose.Schema({
   },
   citizenId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assignedSquad: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad' },
   location: {
     address: String,
     coordinates: {
@@ -206,6 +234,7 @@ const complaintSchema = new mongoose.Schema({
 });
 
 // Models
+const Squad = mongoose.model('Squad', squadSchema);
 const User = mongoose.model('User', userSchema);
 const Complaint = mongoose.model('Complaint', complaintSchema);
 const Notification = mongoose.model('Notification', notificationSchema);
@@ -295,6 +324,37 @@ const suggestCategory = (title, description) => {
     tags: keywords[bestMatch] || [],
     confidence: Math.min(highestScore * 0.2, 1)
   };
+};
+
+// Function to determine squad based on location
+const determineSquad = async (location) => {
+  try {
+    if (!location || !location.coordinates) {
+      return null;
+    }
+
+    const { lat, lng } = location.coordinates;
+    
+    // Get all active squads
+    const squads = await Squad.find({ isActive: true }).populate('members');
+    
+    for (const squad of squads) {
+      for (const region of squad.assignedRegions) {
+        const bounds = region.coordinates.bounds;
+        
+        // Check if coordinates fall within the squad's assigned region
+        if (lat >= bounds.south && lat <= bounds.north && 
+            lng >= bounds.west && lng <= bounds.east) {
+          return squad;
+        }
+      }
+    }
+    
+    return null; // No squad assigned for this location
+  } catch (error) {
+    console.error('Error determining squad:', error);
+    return null;
+  }
 };
 
 // Escalation check function
@@ -428,6 +488,12 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), a
       }
     }
 
+    // Determine squad based on location
+    let assignedSquad = null;
+    if (parsedLocation && parsedLocation.coordinates) {
+      assignedSquad = await determineSquad(parsedLocation);
+    }
+
     const complaint = new Complaint({
       title,
       description,
@@ -435,6 +501,7 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), a
       severity: severity || 'medium',
       citizenId: req.user.userId,
       location: parsedLocation,
+      assignedSquad: assignedSquad ? assignedSquad._id : null,
       attachments,
       aiSuggestions: aiSuggestion,
       timeline: [{
@@ -465,7 +532,22 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
     if (req.user.role === 'citizen') {
       query.citizenId = req.user.userId;
     } else if (req.user.role === 'official') {
-      query.assignedTo = req.user.userId;
+      // For officials, show complaints assigned to their squad or directly to them
+      const user = await User.findById(req.user.userId).populate('squad');
+      if (user.squad) {
+        query.$or = [
+          { assignedTo: req.user.userId },
+          { assignedSquad: user.squad._id }
+        ];
+      } else {
+        query.assignedTo = req.user.userId;
+      }
+    } else if (req.user.role === 'supervisor') {
+      // For supervisors, show complaints assigned to their squad
+      const user = await User.findById(req.user.userId).populate('squad');
+      if (user.squad) {
+        query.assignedSquad = user.squad._id;
+      }
     }
 
     // Apply filters
@@ -477,6 +559,7 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
     const complaints = await Complaint.find(query)
       .populate('citizenId', 'name email')
       .populate('assignedTo', 'name email')
+      .populate('assignedSquad', 'name code')
       .populate('timeline.performedBy', 'name')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
@@ -1730,6 +1813,293 @@ app.get('/api/public/stats', async (req, res) => {
       resolutionRate: totalComplaints > 0 ? (resolvedComplaints / totalComplaints * 100).toFixed(1) : 0,
       categoryStats,
       recentActivity
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Squad Management Endpoints
+app.post('/api/squads', authenticateToken, authorize(['admin', 'supervisor']), async (req, res) => {
+  try {
+    const { name, code, description, assignedRegions } = req.body;
+    
+    // Check if squad with same code exists
+    const existingSquad = await Squad.findOne({ code });
+    if (existingSquad) {
+      return res.status(400).json({ error: 'Squad with this code already exists' });
+    }
+    
+    const squad = new Squad({
+      name,
+      code,
+      description,
+      assignedRegions
+    });
+    
+    await squad.save();
+    
+    res.status(201).json({
+      message: 'Squad created successfully',
+      squad
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/squads', authenticateToken, async (req, res) => {
+  try {
+    const squads = await Squad.find({ isActive: true })
+      .populate('members', 'name email role')
+      .populate('supervisor', 'name email');
+    
+    res.json(squads);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/squads/:id', authenticateToken, async (req, res) => {
+  try {
+    const squad = await Squad.findById(req.params.id)
+      .populate('members', 'name email role phone')
+      .populate('supervisor', 'name email');
+    
+    if (!squad) {
+      return res.status(404).json({ error: 'Squad not found' });
+    }
+    
+    res.json(squad);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/squads/:id', authenticateToken, authorize(['admin', 'supervisor']), async (req, res) => {
+  try {
+    const { name, description, assignedRegions, members, supervisor } = req.body;
+    
+    const squad = await Squad.findById(req.params.id);
+    if (!squad) {
+      return res.status(404).json({ error: 'Squad not found' });
+    }
+    
+    if (name) squad.name = name;
+    if (description) squad.description = description;
+    if (assignedRegions) squad.assignedRegions = assignedRegions;
+    if (members) squad.members = members;
+    if (supervisor) squad.supervisor = supervisor;
+    
+    await squad.save();
+    
+    res.json({
+      message: 'Squad updated successfully',
+      squad
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Demo setup endpoint to create squads and team users
+app.post('/api/demo/setup', async (req, res) => {
+  try {
+    // Create squads with assigned regions
+    const squads = [
+      {
+        name: 'Squad Alpha',
+        code: 'alpha',
+        description: 'Handles complaints from Chennai region',
+        assignedRegions: [{
+          city: 'Chennai',
+          state: 'Tamil Nadu',
+          coordinates: {
+            center: { lat: 13.0827, lng: 80.2707 },
+            bounds: {
+              north: 13.2000,
+              south: 12.9000,
+              east: 80.4000,
+              west: 80.1000
+            }
+          }
+        }]
+      },
+      {
+        name: 'Squad Beta',
+        code: 'beta',
+        description: 'Handles complaints from Mumbai region',
+        assignedRegions: [{
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          coordinates: {
+            center: { lat: 19.0760, lng: 72.8777 },
+            bounds: {
+              north: 19.2000,
+              south: 18.9000,
+              east: 73.0000,
+              west: 72.7000
+            }
+          }
+        }]
+      },
+      {
+        name: 'Squad Gamma',
+        code: 'gamma',
+        description: 'Handles complaints from Bangalore region',
+        assignedRegions: [{
+          city: 'Bangalore',
+          state: 'Karnataka',
+          coordinates: {
+            center: { lat: 12.9716, lng: 77.5946 },
+            bounds: {
+              north: 13.1000,
+              south: 12.8000,
+              east: 77.7000,
+              west: 77.4000
+            }
+          }
+        }]
+      }
+    ];
+    
+    // Create squads
+    const createdSquads = [];
+    for (const squadData of squads) {
+      let squad = await Squad.findOne({ code: squadData.code });
+      if (!squad) {
+        squad = new Squad(squadData);
+        await squad.save();
+      }
+      createdSquads.push(squad);
+    }
+    
+    // Create team users
+    const teamUsers = [
+      {
+        name: 'Official Alpha 1',
+        email: 'official1_alpha@gmail.com',
+        password: 'alpha123',
+        role: 'official',
+        department: 'Infrastructure',
+        assignedRegions: ['Chennai']
+      },
+      {
+        name: 'Official Alpha 2',
+        email: 'official2_alpha@gmail.com',
+        password: 'alpha123',
+        role: 'official',
+        department: 'Sanitation',
+        assignedRegions: ['Chennai']
+      },
+      {
+        name: 'Supervisor Alpha',
+        email: 'supervisor_alpha@gmail.com',
+        password: 'alpha123',
+        role: 'supervisor',
+        department: 'Operations',
+        assignedRegions: ['Chennai']
+      },
+      {
+        name: 'Official Beta 1',
+        email: 'official1_beta@gmail.com',
+        password: 'beta123',
+        role: 'official',
+        department: 'Infrastructure',
+        assignedRegions: ['Mumbai']
+      },
+      {
+        name: 'Official Beta 2',
+        email: 'official2_beta@gmail.com',
+        password: 'beta123',
+        role: 'official',
+        department: 'Sanitation',
+        assignedRegions: ['Mumbai']
+      },
+      {
+        name: 'Supervisor Beta',
+        email: 'supervisor_beta@gmail.com',
+        password: 'beta123',
+        role: 'supervisor',
+        department: 'Operations',
+        assignedRegions: ['Mumbai']
+      },
+      {
+        name: 'Official Gamma 1',
+        email: 'official1_gamma@gmail.com',
+        password: 'gamma123',
+        role: 'official',
+        department: 'Infrastructure',
+        assignedRegions: ['Bangalore']
+      },
+      {
+        name: 'Official Gamma 2',
+        email: 'official2_gamma@gmail.com',
+        password: 'gamma123',
+        role: 'official',
+        department: 'Sanitation',
+        assignedRegions: ['Bangalore']
+      },
+      {
+        name: 'Supervisor Gamma',
+        email: 'supervisor_gamma@gmail.com',
+        password: 'gamma123',
+        role: 'supervisor',
+        department: 'Operations',
+        assignedRegions: ['Bangalore']
+      }
+    ];
+    
+    // Create users and assign to squads
+    const createdUsers = [];
+    for (const userData of teamUsers) {
+      let user = await User.findOne({ email: userData.email });
+      if (!user) {
+        const hashedPassword = await bcrypt.hash(userData.password, 10);
+        user = new User({
+          ...userData,
+          password: hashedPassword
+        });
+        await user.save();
+      }
+      createdUsers.push(user);
+    }
+    
+    // Assign users to their respective squads
+    const alphaSquad = createdSquads.find(s => s.code === 'alpha');
+    const betaSquad = createdSquads.find(s => s.code === 'beta');
+    const gammaSquad = createdSquads.find(s => s.code === 'gamma');
+    
+    if (alphaSquad) {
+      const alphaUsers = createdUsers.filter(u => u.email.includes('alpha'));
+      alphaSquad.members = alphaUsers.filter(u => u.role === 'official').map(u => u._id);
+      alphaSquad.supervisor = alphaUsers.find(u => u.role === 'supervisor')._id;
+      await alphaSquad.save();
+    }
+    
+    if (betaSquad) {
+      const betaUsers = createdUsers.filter(u => u.email.includes('beta'));
+      betaSquad.members = betaUsers.filter(u => u.role === 'official').map(u => u._id);
+      betaSquad.supervisor = betaUsers.find(u => u.role === 'supervisor')._id;
+      await betaSquad.save();
+    }
+    
+    if (gammaSquad) {
+      const gammaUsers = createdUsers.filter(u => u.email.includes('gamma'));
+      gammaSquad.members = gammaUsers.filter(u => u.role === 'official').map(u => u._id);
+      gammaSquad.supervisor = gammaUsers.find(u => u.role === 'supervisor')._id;
+      await gammaSquad.save();
+    }
+    
+    res.json({
+      message: 'Demo setup completed successfully',
+      squads: createdSquads.length,
+      users: createdUsers.length,
+      credentials: {
+        alpha: { email: 'official1_alpha@gmail.com', password: 'alpha123' },
+        beta: { email: 'official1_beta@gmail.com', password: 'beta123' },
+        gamma: { email: 'official1_gamma@gmail.com', password: 'gamma123' }
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

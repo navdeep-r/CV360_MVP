@@ -206,6 +206,62 @@ const Login = ({ onShowPublic }) => {
   const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
 
+  // Demo user creation function
+  const createDemoUser = async () => {
+    try {
+      const demoUser = {
+        name: 'Demo Citizen',
+        email: 'demo@example.com',
+        password: 'demo123',
+        role: 'citizen'
+      };
+      
+      await register(demoUser);
+      alert('Demo user created successfully! You can now log in with demo@example.com / demo123');
+    } catch (error) {
+      if (error.message.includes('already exists')) {
+        // Try to login instead
+        try {
+          await login({ email: 'demo@example.com', password: 'demo123' });
+        } catch (loginError) {
+          alert('Demo user exists but login failed. Please try logging in manually.');
+        }
+      } else {
+        alert('Error creating demo user: ' + error.message);
+      }
+    }
+  };
+
+  // Demo setup function to create squads and team users
+  const setupDemoTeams = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/demo/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to setup demo teams');
+      }
+
+      const result = await response.json();
+      
+      // Check if credentials exist in the response
+      if (result.credentials) {
+        alert(`Demo setup completed successfully!\n\nCreated ${result.squads} squads and ${result.users} users.\n\nTeam Credentials:\n\nSquad Alpha:\nEmail: ${result.credentials.alpha.email}\nPassword: ${result.credentials.alpha.password}\n\nSquad Beta:\nEmail: ${result.credentials.beta.email}\nPassword: ${result.credentials.beta.password}\n\nSquad Gamma:\nEmail: ${result.credentials.gamma.email}\nPassword: ${result.credentials.gamma.password}`);
+      } else {
+        // Fallback credentials if the API doesn't return them
+        alert(`Demo setup completed successfully!\n\nCreated ${result.squads} squads and ${result.users} users.\n\nTeam Credentials:\n\nSquad Alpha:\nEmail: official1_alpha@gmail.com\nPassword: alpha123\n\nSquad Beta:\nEmail: official1_beta@gmail.com\nPassword: beta123\n\nSquad Gamma:\nEmail: official1_gamma@gmail.com\nPassword: gamma123`);
+      }
+    } catch (error) {
+      console.error('Demo setup error:', error);
+      alert('Error setting up demo teams: ' + error.message);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -246,13 +302,27 @@ const Login = ({ onShowPublic }) => {
               {isLogin ? 'Sign up' : 'Sign in'}
             </button>
           </p>
-          <div className="mt-4">
+          <div className="mt-4 space-y-2">
             <button
               onClick={onShowPublic}
               className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100"
             >
               <Globe className="h-4 w-4 mr-2" />
               View Public Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={createDemoUser}
+              className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100"
+            >
+              Create Demo User
+            </button>
+            <button
+              type="button"
+              onClick={setupDemoTeams}
+              className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100"
+            >
+              Setup Demo Teams
             </button>
           </div>
         </div>
@@ -509,17 +579,11 @@ const App = ({ onShowPublic }) => {
         return <CommunityHub />;
       case 'submit':
         return <ComplaintForm 
-          onSubmit={async (formData) => {
-            try {
-              await createComplaint(formData);
-              setToast({ message: 'Complaint submitted successfully!', type: 'success' });
-              setCurrentView('dashboard'); // Navigate back to dashboard after submission
-            } catch (error) {
-              setToast({ message: 'Failed to submit complaint: ' + error.message, type: 'error' });
-              throw error; // Re-throw to let the form handle the error
-            }
-          }} 
-          onNavigate={setCurrentView} 
+          onClose={() => setCurrentView('dashboard')}
+          onSuccess={() => {
+            setToast({ message: 'Complaint submitted successfully!', type: 'success' });
+            setCurrentView('dashboard'); // Navigate back to dashboard after submission
+          }}
         />;
       case 'my-complaints':
         return <ComplaintList onView={setSelectedComplaint} onNavigate={setCurrentView} />;

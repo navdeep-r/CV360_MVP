@@ -4,6 +4,7 @@ import UserManagement from './UserManagement';
 import PerformanceAnalytics from './PerformanceAnalytics';
 import SystemConfig from './SystemConfig';
 import SquadProgress from './SquadProgress';
+import SquadManagement from './SquadManagement';
 
 const TABS = [
   { key: 'dashboard', label: 'Overview' },
@@ -11,6 +12,7 @@ const TABS = [
   { key: 'users', label: 'User Management' },
   { key: 'analytics', label: 'Performance Analytics' },
   { key: 'squad-progress', label: 'Squad Progress' },
+  { key: 'squads', label: 'Squad Management' },
   { key: 'config', label: 'System Configuration' },
 ];
 
@@ -79,6 +81,7 @@ const AdminDashboard = () => {
       {tab === 'users' && <UserManagement />}
       {tab === 'analytics' && <PerformanceAnalytics />}
       {tab === 'squad-progress' && <SquadProgress />}
+      {tab === 'squads' && <SquadManagement />}
       {tab === 'config' && <SystemConfig />}
     </div>
   );
