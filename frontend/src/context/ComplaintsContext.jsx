@@ -359,13 +359,13 @@ export const ComplaintsProvider = ({ children }) => {
       const formData = new FormData();
       formData.append('progress', progress);
       if (notes) formData.append('comment', notes);
-      
       if (files && files.length > 0) {
+        // If progress is 100, send as resolutionMedia, else as progressMedia
+        const field = progress >= 100 ? 'resolutionMedia' : 'progressMedia';
         files.forEach(file => {
-          formData.append('progressMedia', file);
+          formData.append(field, file);
         });
       }
-
       const response = await fetch(`${API_BASE}/complaints/${complaintId}/progress`, {
         method: 'PUT',
         headers: {
@@ -373,13 +373,10 @@ export const ComplaintsProvider = ({ children }) => {
         },
         body: formData,
       });
-
       if (!response.ok) {
         throw new Error('Failed to update complaint progress');
       }
-
       const result = await response.json();
-      
       // Update the complaint in the shared list
       setComplaints(prev => 
         prev.map(complaint => 
@@ -410,11 +407,9 @@ export const ComplaintsProvider = ({ children }) => {
             : complaint
         )
       );
-
       return result;
     } catch (err) {
       console.error('Error updating complaint progress:', err);
-      
       // If API fails, update locally for demo
       setComplaints(prev => 
         prev.map(complaint => 
@@ -446,7 +441,6 @@ export const ComplaintsProvider = ({ children }) => {
             : complaint
         )
       );
-      
       throw err;
     }
   };

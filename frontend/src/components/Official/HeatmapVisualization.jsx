@@ -2,13 +2,13 @@ import React from 'react';
 import { MapPin } from 'lucide-react';
 
 const HeatmapVisualization = ({ complaints, onZoneClick, selectedZone }) => {
-  // Define zones and their coordinates for the heatmap
+  // Define zones and their coordinates for the heatmap (India locations)
   const zones = [
-    { id: 'downtown', name: 'Downtown', x: 20, y: 30, width: 60, height: 40 },
-    { id: 'residential', name: 'Residential', x: 10, y: 10, width: 40, height: 30 },
-    { id: 'commercial', name: 'Commercial', x: 60, y: 10, width: 30, height: 30 },
-    { id: 'industrial', name: 'Industrial', x: 10, y: 70, width: 80, height: 20 },
-    { id: 'suburban', name: 'Suburban', x: 70, y: 40, width: 20, height: 30 }
+    { id: 'downtown', name: 'Downtown Mumbai', x: 20, y: 30, width: 60, height: 40, squad: 'Alpha' },
+    { id: 'residential', name: 'Residential Mumbai', x: 10, y: 10, width: 40, height: 30, squad: 'Beta' },
+    { id: 'commercial', name: 'Commercial Mumbai', x: 60, y: 10, width: 30, height: 30, squad: 'Gamma' },
+    { id: 'industrial', name: 'Industrial Mumbai', x: 10, y: 70, width: 80, height: 20, squad: 'Alpha' },
+    { id: 'suburban', name: 'Suburban Mumbai', x: 70, y: 40, width: 20, height: 30, squad: 'Beta' }
   ];
 
   // Calculate complaint count for each zone

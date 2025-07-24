@@ -8,4 +8,11 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-}); 
+});
+
+export const fetchDashboardTrends = async (token) => {
+  const response = await api.get('/dashboard/trends', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}; 

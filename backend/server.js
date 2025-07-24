@@ -427,26 +427,28 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Find user
-    const user = await User.findOne({ email });
+    // Find user and populate squad
+    const user = await User.findOne({ email }).populate('squad', 'name code assignedRegions');
     if (!user) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-
     // Generate token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      {
+        userId: user._id,
+        email: user.email,
+        role: user.role,
+        squad: user.squad?._id,
+        assignedRegions: user.assignedRegions
+      },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-
     res.json({
       message: 'Login successful',
       token,
@@ -454,7 +456,10 @@ app.post('/api/login', async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        squad: user.squad,
+        assignedRegions: user.assignedRegions,
+        department: user.department
       }
     });
   } catch (error) {
@@ -488,10 +493,15 @@ app.post('/api/complaints', authenticateToken, upload.array('attachments', 5), a
       }
     }
 
-    // Determine squad based on location
+    // Determine squad based on city in address
     let assignedSquad = null;
-    if (parsedLocation && parsedLocation.coordinates) {
-      assignedSquad = await determineSquad(parsedLocation);
+    if (parsedLocation && parsedLocation.address) {
+      const address = parsedLocation.address.toLowerCase();
+      if (address.includes('chennai')) {
+        assignedSquad = await Squad.findOne({ code: 'alpha' });
+      } else if (address.includes('mumbai')) {
+        assignedSquad = await Squad.findOne({ code: 'beta' });
+      }
     }
 
     const complaint = new Complaint({
@@ -527,12 +537,10 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
   try {
     const { status, category, severity, assignedTo, page = 1, limit = 10 } = req.query;
     let query = {};
-
-    // Role-based filtering
     if (req.user.role === 'citizen') {
       query.citizenId = req.user.userId;
     } else if (req.user.role === 'official') {
-      // For officials, show complaints assigned to their squad or directly to them
+      // Show complaints from their assigned squad OR directly assigned to them
       const user = await User.findById(req.user.userId).populate('squad');
       if (user.squad) {
         query.$or = [
@@ -543,19 +551,16 @@ app.get('/api/complaints', authenticateToken, async (req, res) => {
         query.assignedTo = req.user.userId;
       }
     } else if (req.user.role === 'supervisor') {
-      // For supervisors, show complaints assigned to their squad
       const user = await User.findById(req.user.userId).populate('squad');
       if (user.squad) {
         query.assignedSquad = user.squad._id;
       }
     }
-
     // Apply filters
     if (status) query.status = status;
     if (category) query.category = category;
     if (severity) query.severity = severity;
     if (assignedTo && req.user.role === 'admin') query.assignedTo = assignedTo;
-
     const complaints = await Complaint.find(query)
       .populate('citizenId', 'name email')
       .populate('assignedTo', 'name email')
@@ -698,10 +703,24 @@ app.put('/api/complaints/:id/progress', authenticateToken, upload.array('proofFi
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    // Check authorization - only assigned official or admin can update progress
-    if (req.user.role === 'citizen' || 
-        (req.user.role === 'official' && complaint.assignedTo?.toString() !== req.user.userId)) {
+    // Check authorization - only assigned official, any official in assigned squad, or admin can update progress
+    if (req.user.role === 'citizen') {
       return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role === 'official') {
+      const user = await User.findById(req.user.userId);
+      console.log('DEBUG /api/complaints/:id/progress', {
+        userId: req.user.userId,
+        userSquad: user.squad,
+        complaintAssignedTo: complaint.assignedTo,
+        complaintAssignedSquad: complaint.assignedSquad
+      });
+      if (
+        complaint.assignedTo?.toString() !== req.user.userId &&
+        (!complaint.assignedSquad || !user.squad || complaint.assignedSquad.toString() !== user.squad.toString())
+      ) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     // Update progress
@@ -1168,8 +1187,13 @@ app.post('/api/demo/setup', async (req, res) => {
       }
     ];
 
-    await User.deleteMany({});
-    await User.insertMany(demoUsers);
+    // Create users only if they don't exist
+    for (const userData of demoUsers) {
+      const existingUser = await User.findOne({ email: userData.email });
+      if (!existingUser) {
+        await User.create(userData);
+      }
+    }
 
     // Create demo complaints
     const citizen = await User.findOne({ email: 'citizen123@gmail.com' });
@@ -1177,35 +1201,51 @@ app.post('/api/demo/setup', async (req, res) => {
 
     const demoComplaints = [
       {
-        title: 'Pothole on Main Street',
-        description: 'Large pothole causing traffic issues',
+        title: 'Pothole on Marine Drive',
+        description: 'Large pothole causing traffic issues on Marine Drive',
         category: 'roads',
         severity: 'high',
         citizenId: citizen._id,
         assignedTo: official._id,
         status: 'in_progress',
-        location: { address: 'Main Street, City Center', coordinates: { lat: 40.7128, lng: -74.0060 } }
+        location: { 
+          address: 'Marine Drive, Mumbai', 
+          zone: 'downtown',
+          coordinates: { lat: 19.0760, lng: 72.8777 } 
+        }
       },
       {
-        title: 'Garbage not collected',
-        description: 'Waste bins overflowing for 3 days',
+        title: 'Garbage not collected in Bandra',
+        description: 'Waste bins overflowing for 3 days in Bandra',
         category: 'sanitation',
         severity: 'medium',
         citizenId: citizen._id,
         status: 'pending',
-        location: { address: 'Oak Avenue, Downtown', coordinates: { lat: 40.7589, lng: -73.9851 } }
+        location: { 
+          address: 'Bandra West, Mumbai', 
+          zone: 'residential',
+          coordinates: { lat: 19.2183, lng: 72.9781 } 
+        }
       }
     ];
 
-    await Complaint.deleteMany({});
-    await Complaint.insertMany(demoComplaints);
+    // Create complaints only if they don't exist
+    for (const complaintData of demoComplaints) {
+      const existingComplaint = await Complaint.findOne({ 
+        title: complaintData.title,
+        citizenId: complaintData.citizenId 
+      });
+      if (!existingComplaint) {
+        await Complaint.create(complaintData);
+      }
+    }
 
     // Create demo notifications
     const demoNotifications = [
       {
         userId: citizen._id,
         title: 'Complaint Status Update',
-        message: 'Your complaint "Pothole on Main Street" has been assigned to a government official.',
+        message: 'Your complaint "Pothole on Marine Drive" has been assigned to a government official.',
         type: 'status_update',
         relatedComplaint: demoComplaints[0]._id
       },
@@ -1217,8 +1257,16 @@ app.post('/api/demo/setup', async (req, res) => {
       }
     ];
 
-    await Notification.deleteMany({});
-    await Notification.insertMany(demoNotifications);
+    // Create notifications only if they don't exist
+    for (const notificationData of demoNotifications) {
+      const existingNotification = await Notification.findOne({ 
+        title: notificationData.title,
+        userId: notificationData.userId 
+      });
+      if (!existingNotification) {
+        await Notification.create(notificationData);
+      }
+    }
 
     // Create demo community discussions
     const demoDiscussions = [
@@ -1910,56 +1958,135 @@ app.post('/api/demo/setup', async (req, res) => {
       {
         name: 'Squad Alpha',
         code: 'alpha',
-        description: 'Handles complaints from Chennai region',
-        assignedRegions: [{
-          city: 'Chennai',
-          state: 'Tamil Nadu',
-          coordinates: {
-            center: { lat: 13.0827, lng: 80.2707 },
-            bounds: {
-              north: 13.2000,
-              south: 12.9000,
-              east: 80.4000,
-              west: 80.1000
+        description: 'Handles complaints from Downtown Mumbai, Industrial Mumbai, and Chennai',
+        assignedRegions: [
+          {
+            name: 'Downtown Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.0760, lng: 72.8777 },
+              bounds: {
+                north: 19.1000,
+                south: 19.0500,
+                east: 72.9000,
+                west: 72.8500
+              }
+            }
+          },
+          {
+            name: 'Industrial Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.0000, lng: 72.8500 },
+              bounds: {
+                north: 19.0500,
+                south: 18.9500,
+                east: 72.9000,
+                west: 72.8000
+              }
+            }
+          },
+          {
+            name: 'Chennai Central',
+            city: 'Chennai',
+            state: 'Tamil Nadu',
+            coordinates: {
+              center: { lat: 13.0827, lng: 80.2707 },
+              bounds: {
+                north: 13.2000,
+                south: 12.9000,
+                east: 80.4000,
+                west: 80.1000
+              }
+            }
+          },
+          {
+            name: 'Chennai Suburban',
+            city: 'Chennai',
+            state: 'Tamil Nadu',
+            coordinates: {
+              center: { lat: 13.0000, lng: 80.2000 },
+              bounds: {
+                north: 13.1000,
+                south: 12.9000,
+                east: 80.3000,
+                west: 80.1000
+              }
             }
           }
-        }]
+        ]
       },
       {
         name: 'Squad Beta',
         code: 'beta',
-        description: 'Handles complaints from Mumbai region',
-        assignedRegions: [{
-          city: 'Mumbai',
-          state: 'Maharashtra',
-          coordinates: {
-            center: { lat: 19.0760, lng: 72.8777 },
-            bounds: {
-              north: 19.2000,
-              south: 18.9000,
-              east: 73.0000,
-              west: 72.7000
+        description: 'Handles complaints from Suburban and Coastal Mumbai',
+        assignedRegions: [
+          {
+            name: 'Suburban Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.1500, lng: 72.8500 },
+              bounds: {
+                north: 19.2000,
+                south: 19.1000,
+                east: 72.9000,
+                west: 72.8000
+              }
+            }
+          },
+          {
+            name: 'Coastal Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.0500, lng: 72.9500 },
+              bounds: {
+                north: 19.1000,
+                south: 19.0000,
+                east: 73.0000,
+                west: 72.9000
+              }
             }
           }
-        }]
+        ]
       },
       {
         name: 'Squad Gamma',
         code: 'gamma',
-        description: 'Handles complaints from Bangalore region',
-        assignedRegions: [{
-          city: 'Bangalore',
-          state: 'Karnataka',
-          coordinates: {
-            center: { lat: 12.9716, lng: 77.5946 },
-            bounds: {
-              north: 13.1000,
-              south: 12.8000,
-              east: 77.7000,
-              west: 77.4000
+        description: 'Handles complaints from Northern and Western Mumbai',
+        assignedRegions: [
+          {
+            name: 'Northern Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.2000, lng: 72.8000 },
+              bounds: {
+                north: 19.2500,
+                south: 19.1500,
+                east: 72.8500,
+                west: 72.7500
+              }
+            }
+          },
+          {
+            name: 'Western Mumbai',
+            city: 'Mumbai',
+            state: 'Maharashtra',
+            coordinates: {
+              center: { lat: 19.1000, lng: 72.7500 },
+              bounds: {
+                north: 19.1500,
+                south: 19.0500,
+                east: 72.8000,
+                west: 72.7000
+              }
             }
           }
-        }]
+        ]
       }
     ];
     
@@ -1982,7 +2109,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'alpha123',
         role: 'official',
         department: 'Infrastructure',
-        assignedRegions: ['Chennai']
+        assignedRegions: ['Downtown Mumbai', 'Industrial Mumbai', 'Chennai Central', 'Chennai Suburban']
       },
       {
         name: 'Official Alpha 2',
@@ -1990,7 +2117,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'alpha123',
         role: 'official',
         department: 'Sanitation',
-        assignedRegions: ['Chennai']
+        assignedRegions: ['Downtown Mumbai', 'Industrial Mumbai', 'Chennai Central', 'Chennai Suburban']
       },
       {
         name: 'Supervisor Alpha',
@@ -1998,7 +2125,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'alpha123',
         role: 'supervisor',
         department: 'Operations',
-        assignedRegions: ['Chennai']
+        assignedRegions: ['Downtown Mumbai', 'Industrial Mumbai', 'Chennai Central', 'Chennai Suburban']
       },
       {
         name: 'Official Beta 1',
@@ -2006,7 +2133,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'beta123',
         role: 'official',
         department: 'Infrastructure',
-        assignedRegions: ['Mumbai']
+        assignedRegions: ['Suburban Mumbai', 'Coastal Mumbai']
       },
       {
         name: 'Official Beta 2',
@@ -2014,7 +2141,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'beta123',
         role: 'official',
         department: 'Sanitation',
-        assignedRegions: ['Mumbai']
+        assignedRegions: ['Suburban Mumbai', 'Coastal Mumbai']
       },
       {
         name: 'Supervisor Beta',
@@ -2022,7 +2149,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'beta123',
         role: 'supervisor',
         department: 'Operations',
-        assignedRegions: ['Mumbai']
+        assignedRegions: ['Suburban Mumbai', 'Coastal Mumbai']
       },
       {
         name: 'Official Gamma 1',
@@ -2030,7 +2157,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'gamma123',
         role: 'official',
         department: 'Infrastructure',
-        assignedRegions: ['Bangalore']
+        assignedRegions: ['Northern Mumbai', 'Western Mumbai']
       },
       {
         name: 'Official Gamma 2',
@@ -2038,7 +2165,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'gamma123',
         role: 'official',
         department: 'Sanitation',
-        assignedRegions: ['Bangalore']
+        assignedRegions: ['Northern Mumbai', 'Western Mumbai']
       },
       {
         name: 'Supervisor Gamma',
@@ -2046,7 +2173,7 @@ app.post('/api/demo/setup', async (req, res) => {
         password: 'gamma123',
         role: 'supervisor',
         department: 'Operations',
-        assignedRegions: ['Bangalore']
+        assignedRegions: ['Northern Mumbai', 'Western Mumbai']
       }
     ];
     
@@ -2054,14 +2181,27 @@ app.post('/api/demo/setup', async (req, res) => {
     const createdUsers = [];
     for (const userData of teamUsers) {
       let user = await User.findOne({ email: userData.email });
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
       if (!user) {
-        const hashedPassword = await bcrypt.hash(userData.password, 10);
         user = new User({
           ...userData,
           password: hashedPassword
         });
-        await user.save();
+      } else {
+        user.password = hashedPassword;
+        user.role = userData.role;
+        user.department = userData.department;
+        user.assignedRegions = userData.assignedRegions;
       }
+      // Assign squad based on email pattern
+      if (userData.email.includes('alpha')) {
+        user.squad = createdSquads.find(s => s.code === 'alpha')._id;
+      } else if (userData.email.includes('beta')) {
+        user.squad = createdSquads.find(s => s.code === 'beta')._id;
+      } else if (userData.email.includes('gamma')) {
+        user.squad = createdSquads.find(s => s.code === 'gamma')._id;
+      }
+      await user.save();
       createdUsers.push(user);
     }
     
@@ -2091,10 +2231,136 @@ app.post('/api/demo/setup', async (req, res) => {
       await gammaSquad.save();
     }
     
+    // Create sample complaints including Chennai complaints for Alpha squad
+    const alphaSquadForComplaints = createdSquads.find(s => s.code === 'alpha');
+    const alphaOfficial = createdUsers.find(u => u.email === 'official1_alpha@gmail.com');
+    
+    if (alphaSquadForComplaints && alphaOfficial) {
+      const sampleComplaints = [
+        // Mumbai complaints (existing)
+        {
+          title: 'Critical Pothole on Marine Drive',
+          description: 'Large pothole causing traffic disruption and vehicle damage',
+          category: 'Infrastructure',
+          severity: 'critical',
+          status: 'pending',
+          escalationLevel: 'red',
+          location: {
+            address: 'Marine Drive, Mumbai',
+            coordinates: { lat: 19.0760, lng: 72.8777 }
+          },
+          citizenId: alphaOfficial._id,
+          assignedSquad: alphaSquadForComplaints._id,
+          timeline: [{
+            action: 'Complaint submitted',
+            performedBy: alphaOfficial._id,
+            comment: 'Initial complaint submission'
+          }]
+        },
+        {
+          title: 'Water Leak in BKC Industrial Zone',
+          description: 'Major water pipeline leak affecting industrial operations',
+          category: 'Water Supply',
+          severity: 'critical',
+          status: 'in_progress',
+          escalationLevel: 'red',
+          location: {
+            address: 'BKC Industrial Zone, Mumbai',
+            coordinates: { lat: 19.0000, lng: 72.8500 }
+          },
+          citizenId: alphaOfficial._id,
+          assignedSquad: alphaSquadForComplaints._id,
+          timeline: [{
+            action: 'Complaint submitted',
+            performedBy: alphaOfficial._id,
+            comment: 'Initial complaint submission'
+          }]
+        },
+        // Chennai complaints (new)
+        {
+          title: 'Traffic Signal Malfunction at Anna Nagar',
+          description: 'Traffic signal not working properly causing traffic chaos',
+          category: 'Traffic',
+          severity: 'high',
+          status: 'pending',
+          escalationLevel: 'yellow',
+          location: {
+            address: 'Anna Nagar, Chennai',
+            coordinates: { lat: 13.0827, lng: 80.2707 }
+          },
+          citizenId: alphaOfficial._id,
+          assignedSquad: alphaSquadForComplaints._id,
+          timeline: [{
+            action: 'Complaint submitted',
+            performedBy: alphaOfficial._id,
+            comment: 'Initial complaint submission'
+          }]
+        },
+        {
+          title: 'Garbage Collection Issue in T Nagar',
+          description: 'Garbage not being collected regularly in T Nagar area',
+          category: 'Sanitation',
+          severity: 'medium',
+          status: 'pending',
+          escalationLevel: 'green',
+          location: {
+            address: 'T Nagar, Chennai',
+            coordinates: { lat: 13.0000, lng: 80.2000 }
+          },
+          citizenId: alphaOfficial._id,
+          assignedSquad: alphaSquadForComplaints._id,
+          timeline: [{
+            action: 'Complaint submitted',
+            performedBy: alphaOfficial._id,
+            comment: 'Initial complaint submission'
+          }]
+        },
+        {
+          title: 'Street Light Outage in Mylapore',
+          description: 'Multiple street lights not working in Mylapore area',
+          category: 'Infrastructure',
+          severity: 'high',
+          status: 'in_progress',
+          escalationLevel: 'yellow',
+          location: {
+            address: 'Mylapore, Chennai',
+            coordinates: { lat: 13.0500, lng: 80.2500 }
+          },
+          citizenId: alphaOfficial._id,
+          assignedSquad: alphaSquadForComplaints._id,
+          timeline: [{
+            action: 'Complaint submitted',
+            performedBy: alphaOfficial._id,
+            comment: 'Initial complaint submission'
+          }]
+        }
+      ];
+
+      // Create complaints if they don't exist
+      for (const complaintData of sampleComplaints) {
+        const existingComplaint = await Complaint.findOne({ 
+          title: complaintData.title,
+          'location.address': complaintData.location.address
+        });
+        
+        if (!existingComplaint) {
+          const complaint = new Complaint(complaintData);
+          await complaint.save();
+        }
+      }
+    }
+
+    console.log('Demo setup completed:', {
+      squads: createdSquads.length,
+      users: createdUsers.length,
+      userEmails: createdUsers.map(u => u.email)
+    });
+    
     res.json({
       message: 'Demo setup completed successfully',
       squads: createdSquads.length,
       users: createdUsers.length,
+      userEmails: createdUsers.map(u => u.email),
       credentials: {
         alpha: { email: 'official1_alpha@gmail.com', password: 'alpha123' },
         beta: { email: 'official1_beta@gmail.com', password: 'beta123' },

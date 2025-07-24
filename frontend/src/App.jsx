@@ -210,21 +210,24 @@ const Login = ({ onShowPublic }) => {
   const createDemoUser = async () => {
     try {
       const demoUser = {
-        name: 'Demo Citizen',
-        email: 'demo@example.com',
-        password: 'demo123',
+        name: 'John',
+        email: 'citizen123@gmail.com',
+        password: 'citizen123',
         role: 'citizen'
       };
       
       await register(demoUser);
-      alert('Demo user created successfully! You can now log in with demo@example.com / demo123');
+      alert('Demo user created successfully! You can now log in with citizen123@gmail.com / citizen123');
     } catch (error) {
-      if (error.message.includes('already exists')) {
+      console.log('Registration error:', error.message);
+      if (error.message.includes('already exists') || error.message.includes('400') || error.message.includes('Bad Request')) {
         // Try to login instead
         try {
-          await login({ email: 'demo@example.com', password: 'demo123' });
+          await login({ email: 'citizen123@gmail.com', password: 'citizen123' });
+          alert('Demo user already exists! Logged in successfully.');
         } catch (loginError) {
-          alert('Demo user exists but login failed. Please try logging in manually.');
+          console.log('Login error:', loginError.message);
+          alert('Demo user exists but login failed. Please try logging in manually with citizen123@gmail.com / citizen123');
         }
       } else {
         alert('Error creating demo user: ' + error.message);
@@ -249,13 +252,10 @@ const Login = ({ onShowPublic }) => {
 
       const result = await response.json();
       
-      // Check if credentials exist in the response
-      if (result.credentials) {
-        alert(`Demo setup completed successfully!\n\nCreated ${result.squads} squads and ${result.users} users.\n\nTeam Credentials:\n\nSquad Alpha:\nEmail: ${result.credentials.alpha.email}\nPassword: ${result.credentials.alpha.password}\n\nSquad Beta:\nEmail: ${result.credentials.beta.email}\nPassword: ${result.credentials.beta.password}\n\nSquad Gamma:\nEmail: ${result.credentials.gamma.email}\nPassword: ${result.credentials.gamma.password}`);
-      } else {
-        // Fallback credentials if the API doesn't return them
-        alert(`Demo setup completed successfully!\n\nCreated ${result.squads} squads and ${result.users} users.\n\nTeam Credentials:\n\nSquad Alpha:\nEmail: official1_alpha@gmail.com\nPassword: alpha123\n\nSquad Beta:\nEmail: official1_beta@gmail.com\nPassword: beta123\n\nSquad Gamma:\nEmail: official1_gamma@gmail.com\nPassword: gamma123`);
-      }
+      alert('Demo setup completed successfully! You can now log in with:\n\n' +
+            'Citizen: citizen123@gmail.com / citizen123\n' +
+            'Official: gov_officer1@gmail.com / gov123\n' +
+            'Supervisor: gov_supervisor1@gmail.com / govsupervise123');
     } catch (error) {
       console.error('Demo setup error:', error);
       alert('Error setting up demo teams: ' + error.message);
@@ -406,131 +406,62 @@ const Login = ({ onShowPublic }) => {
   );
 };
 
-// Navigation Component
-const Navigation = ({ currentView, setCurrentView }) => {
-  const { user, logout } = useAuth();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  const getNavItems = () => {
-    switch (user?.role) {
-      case 'citizen':
-        return [
-          { name: 'Dashboard', icon: Home, key: 'dashboard' },
-          { name: 'Analytics', icon: BarChart3, key: 'analytics' },
-          { name: 'Community Hub', icon: Users, key: 'community' },
-          { name: 'Submit Complaint', icon: PlusCircle, key: 'submit' },
-          { name: 'My Complaints', icon: FileText, key: 'my-complaints' },
-          { name: 'Profile', icon: User, key: 'profile' },
-        ];
-      case 'official':
-        return [
-          { name: 'Dashboard', icon: Home, key: 'dashboard' },
-          { name: 'Task Management', icon: TrendingUp, key: 'tasks' },
-          { name: 'Assigned Complaints', icon: FileText, key: 'assigned' },
-          { name: 'All Complaints', icon: Eye, key: 'all-complaints' },
-          { name: 'Squad Management', icon: Users, key: 'squads' },
-        ];
-      case 'admin':
-        return [
-          { name: 'Dashboard', icon: Home, key: 'dashboard' },
-          { name: 'Analytics', icon: BarChart3, key: 'analytics' },
-          { name: 'All Complaints', icon: FileText, key: 'all-complaints' },
-          { name: 'Users', icon: Users, key: 'users' },
-        ];
-      default:
-        return [];
-    }
-  };
-
-  const handleNavClick = (key) => {
-    setCurrentView(key);
-    setIsMenuOpen(false);
-  };
-
-  return (
-    <nav className="bg-white shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold text-indigo-600">CityView360</h1>
-          </div>
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
-            {getNavItems().map((item) => (
-              <button
-                key={item.name}
-                onClick={() => handleNavClick(item.key)}
-                className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  currentView === item.key
-                    ? 'text-indigo-600 bg-indigo-50'
-                    : 'text-gray-700 hover:text-indigo-600 hover:bg-gray-50'
-                }`}
-              >
-                <item.icon className="h-4 w-4 mr-2" />
-                {item.name}
-              </button>
-            ))}
-          </div>
-          {/* User Menu */}
-          <div className="flex items-center space-x-4">
-            {user?.role === 'citizen' && <NotificationCenter />}
-            <div className="flex items-center">
-              <User className="h-5 w-5 text-gray-400 mr-2" />
-              <span className="text-sm font-medium text-gray-700">
-                {user?.name} ({user?.role})
-              </span>
-            </div>
-            <button
-              onClick={logout}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Logout
-            </button>
-          </div>
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
-        </div>
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-              {getNavItems().map((item) => (
-                <button
-                  key={item.name}
-                  onClick={() => handleNavClick(item.key)}
-                  className={`flex items-center w-full px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    currentView === item.key
-                      ? 'text-indigo-600 bg-indigo-50'
-                      : 'text-gray-700 hover:text-indigo-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <item.icon className="h-5 w-5 mr-3" />
-                  {item.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-};
-
 // Add this function before the App component
 const renderAdminContent = () => {
   return <AdminDashboard />;
 };
 
+// Add CitizenNavbar component
+const CitizenNavbar = ({ currentView, setCurrentView, onLogout, user }) => {
+  const navItems = [
+    { name: 'Dashboard', key: 'dashboard' },
+    { name: 'Analytics', key: 'analytics' },
+    { name: 'Community Hub', key: 'community' },
+    { name: 'Submit Complaint', key: 'submit' },
+    { name: 'My Complaints', key: 'my-complaints' },
+    { name: 'Profile', key: 'profile' },
+  ];
+  return (
+    <nav className="bg-white shadow-sm border-b sticky top-0 z-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+        <div className="flex items-center gap-4">
+          <span className="text-xl font-bold text-indigo-700">CityView360</span>
+          <span className="text-gray-400">|</span>
+          <span className="font-medium text-gray-700">Citizen Portal</span>
+        </div>
+        <div className="flex gap-6">
+          {navItems.map(item => (
+            <button
+              key={item.key}
+              onClick={() => setCurrentView(item.key)}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                currentView === item.key
+                  ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-indigo-600 hover:bg-gray-50'
+              }`}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="font-semibold text-gray-800">{user?.name || 'Citizen'}</div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="ml-2 px-3 py-1 text-sm font-medium text-white bg-red-500 rounded hover:bg-red-600"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+};
+
 // Main App Component
 const App = ({ onShowPublic }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'info' });
@@ -551,7 +482,6 @@ const App = ({ onShowPublic }) => {
   if (user.role === 'admin' || user.role === 'supervisor') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Navigation currentView={currentView} setCurrentView={setCurrentView} />
         <main className="max-w-7xl mx-auto py-8 px-4">
           {renderAdminContent()}
         </main>
@@ -597,24 +527,59 @@ const App = ({ onShowPublic }) => {
   const renderOfficialContent = () => {
     switch (currentView) {
       case 'dashboard':
-        return <OfficialDashboard />;
+        return <OfficialDashboard onLogout={logout} />;
       case 'tasks':
         return <TaskManagement />;
       case 'assigned':
         return <AssignedComplaints />;
       case 'all-complaints':
         return <AllComplaints />;
-      case 'squads':
-        return <SquadManagement />;
       default:
-        return <OfficialDashboard />;
+        return <OfficialDashboard onLogout={logout} />;
     }
   };
 
+  if (user.role === 'citizen') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <CitizenNavbar currentView={currentView} setCurrentView={setCurrentView} onLogout={logout} user={user} />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            {selectedComplaint ? (
+              <ComplaintDetails 
+                complaint={selectedComplaint} 
+                onUpvote={async (complaintId) => {
+                  try {
+                    await upvoteComplaint(complaintId);
+                    setToast({ message: 'Upvoted successfully!', type: 'success' });
+                  } catch (error) {
+                    setToast({ message: 'Failed to upvote: ' + error.message, type: 'error' });
+                  }
+                }}
+                onBack={() => setSelectedComplaint(null)}
+                allComplaints={complaints}
+                onViewComplaint={(complaint) => {
+                  setSelectedComplaint(complaint);
+                }}
+              />
+            ) : (
+              renderCitizenContent()
+            )}
+          </div>
+        </main>
+        <ChatbotAssistant />
+        <NotificationToast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast({ message: '', type: 'info' })}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navigation currentView={currentView} setCurrentView={setCurrentView} />
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {/* Remove the duplicate navigation buttons since they're now in the main nav */}
         <div className="px-4 py-6 sm:px-0">
           {selectedComplaint ? (
@@ -644,7 +609,7 @@ const App = ({ onShowPublic }) => {
             )
           )}
         </div>
-      </div>
+      </main>
       <ChatbotAssistant />
       <NotificationToast
         message={toast.message}

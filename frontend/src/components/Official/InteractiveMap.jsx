@@ -16,32 +16,37 @@ const InteractiveMap = ({ complaints, onZoneClick, selectedZone }) => {
   const mapRef = useRef();
   const heatmapLayerRef = useRef();
 
-  // Define zone boundaries and centers
+  // Define zone boundaries and centers (India locations)
   const zones = {
     downtown: {
-      center: [40.7128, -74.0060],
-      bounds: [[40.7050, -74.0150], [40.7200, -74.0000]],
-      name: 'Downtown'
+      center: [19.0760, 72.8777], // Mumbai downtown
+      bounds: [[19.0690, 72.8687], [19.0830, 72.8867]],
+      name: 'Downtown Mumbai',
+      squad: 'Alpha'
     },
     residential: {
-      center: [40.7589, -73.9851],
-      bounds: [[40.7500, -73.9950], [40.7700, -73.9750]],
-      name: 'Residential'
+      center: [19.2183, 72.9781], // Mumbai residential
+      bounds: [[19.2093, 72.9691], [19.2273, 72.9871]],
+      name: 'Residential Mumbai',
+      squad: 'Beta'
     },
     commercial: {
-      center: [40.7505, -73.9934],
-      bounds: [[40.7400, -74.0030], [40.7600, -73.9830]],
-      name: 'Commercial'
+      center: [19.0170, 72.8476], // Mumbai commercial
+      bounds: [[19.0080, 72.8386], [19.0260, 72.8566]],
+      name: 'Commercial Mumbai',
+      squad: 'Gamma'
     },
     industrial: {
-      center: [40.7421, -73.9911],
-      bounds: [[40.7320, -74.0010], [40.7520, -73.9810]],
-      name: 'Industrial'
+      center: [19.0760, 72.8777], // Mumbai industrial
+      bounds: [[19.0670, 72.8687], [19.0850, 72.8867]],
+      name: 'Industrial Mumbai',
+      squad: 'Alpha'
     },
     suburban: {
-      center: [40.7700, -73.9700],
-      bounds: [[40.7600, -73.9800], [40.7800, -73.9600]],
-      name: 'Suburban'
+      center: [19.2183, 72.9781], // Mumbai suburban
+      bounds: [[19.2093, 72.9691], [19.2273, 72.9871]],
+      name: 'Suburban Mumbai',
+      squad: 'Beta'
     }
   };
 
@@ -150,7 +155,7 @@ const InteractiveMap = ({ complaints, onZoneClick, selectedZone }) => {
   return (
     <div className="w-full h-96 rounded-lg overflow-hidden" style={{zIndex: 0}}>
       <MapContainer
-        center={[40.7128, -74.0060]}
+        center={[19.0760, 72.8777]}
         zoom={12}
         style={{ height: '100%', width: '100%' }}
         ref={mapRef}

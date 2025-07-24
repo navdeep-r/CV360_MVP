@@ -15,6 +15,7 @@ import {
 import ComplaintTable from './ComplaintTable';
 import ComplaintDetailModal from './ComplaintDetailModal';
 import { useComplaintsContext } from '../../context/ComplaintsContext';
+import squads from '../../utils/squads';
 
 const AssignedComplaints = () => {
   const [selectedComplaint, setSelectedComplaint] = useState(null);
@@ -25,18 +26,8 @@ const AssignedComplaints = () => {
     priority: '',
     search: ''
   });
-  const [squadInfo, setSquadInfo] = useState({
-    name: 'Squad Alpha',
-    members: [
-      { id: 1, name: 'Officer John Smith', phone: '+1-555-0101', email: 'john.smith@city.gov', status: 'available' },
-      { id: 2, name: 'Officer Sarah Johnson', phone: '+1-555-0102', email: 'sarah.johnson@city.gov', status: 'busy' },
-      { id: 3, name: 'Officer Mike Chen', phone: '+1-555-0103', email: 'mike.chen@city.gov', status: 'available' },
-      { id: 4, name: 'Officer Lisa Davis', phone: '+1-555-0104', email: 'lisa.davis@city.gov', status: 'off-duty' }
-    ],
-    assignedZone: 'downtown',
-    vehicle: 'Alpha-001',
-    supervisor: 'Captain Robert Wilson'
-  });
+  const [selectedSquadId, setSelectedSquadId] = useState('alpha');
+  const squadInfo = squads.find(s => s.id === selectedSquadId);
 
   const { 
     complaints, 
@@ -128,6 +119,20 @@ const AssignedComplaints = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Assigned Complaints</h1>
         <p className="text-gray-600">Manage complaints assigned to your squad</p>
+      </div>
+
+      {/* Squad Selector */}
+      <div className="mb-4">
+        <label className="mr-2 font-medium">Select Squad:</label>
+        <select
+          value={selectedSquadId}
+          onChange={e => setSelectedSquadId(e.target.value)}
+          className="border rounded px-2 py-1"
+        >
+          {squads.map(squad => (
+            <option key={squad.id} value={squad.id}>{squad.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* Squad Information Panel */}
@@ -282,7 +287,7 @@ const AssignedComplaints = () => {
             >
               <option value="">All Priorities</option>
               <option value="high">High Priority</option>
-              <option value="urgent">Urgent (>3 days)</option>
+              <option value="urgent">Urgent (&gt;3 days)</option>
             </select>
           </div>
         </div>

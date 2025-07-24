@@ -6,11 +6,12 @@ import {
   Upload, 
   AlertCircle, 
   CheckCircle,
-  Navigation,
   Crosshair,
   Users
 } from 'lucide-react';
 import { useComplaintsContext } from '../../context/ComplaintsContext';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const ComplaintForm = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
@@ -231,16 +232,17 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
   // Handle file uploads
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const allowedTypes = ['image/', 'video/', 'application/pdf'];
+    const validFiles = files.filter(file => allowedTypes.some(type => file.type.startsWith(type)));
     
-    if (imageFiles.length > 5) {
-      alert('Maximum 5 images allowed');
+    if (validFiles.length > 5) {
+      alert('Maximum 5 files allowed');
       return;
     }
 
     setFormData(prev => ({
       ...prev,
-      images: [...prev.images, ...imageFiles]
+      images: [...prev.images, ...validFiles]
     }));
   };
 
@@ -315,7 +317,7 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
       }
       
       if (onClose && typeof onClose === 'function') {
-        onClose();
+      onClose();
       }
     } catch (error) {
       console.error('Error submitting complaint:', error);
@@ -354,6 +356,46 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
     }
   };
 
+  // AI category suggestion logic (mock, similar to backend)
+  const getAISuggestion = (title, description) => {
+    const keywords = {
+      sanitation: ['garbage', 'waste', 'trash', 'dump', 'clean', 'dirty'],
+      roads: ['road', 'street', 'pothole', 'repair', 'construction', 'traffic'],
+      water: ['water', 'leak', 'pipe', 'supply', 'drainage', 'flood'],
+      electricity: ['power', 'electricity', 'light', 'outage', 'pole', 'wire'],
+      parks: ['park', 'garden', 'playground', 'maintenance', 'tree'],
+      traffic: ['traffic', 'signal', 'parking', 'congestion', 'vehicle']
+    };
+    const text = (title + ' ' + description).toLowerCase();
+    let bestMatch = 'other';
+    let highestScore = 0;
+    for (const [category, words] of Object.entries(keywords)) {
+      const score = words.reduce((acc, word) => acc + (text.includes(word) ? 1 : 0), 0);
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = category;
+      }
+    }
+    return bestMatch;
+  };
+  const aiSuggestedCategory = getAISuggestion(formData.title, formData.description);
+
+  // Map pin placement
+  const DEFAULT_CENTER = [19.0760, 72.8777];
+  const MapPinSelector = ({ coordinates, setCoordinates }) => {
+    const [position, setPosition] = useState(coordinates ? [coordinates.lat, coordinates.lng] : null);
+    useMapEvents({
+      click(e) {
+        setPosition([e.latlng.lat, e.latlng.lng]);
+        setCoordinates({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }
+    });
+    useEffect(() => {
+      if (coordinates) setPosition([coordinates.lat, coordinates.lng]);
+    }, [coordinates]);
+    return position ? <Marker position={position} /> : null;
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
@@ -370,33 +412,33 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Title */}
-            <div>
+      <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Complaint Title *
               </label>
-              <input
-                type="text"
+        <input
+          type="text"
                 name="title"
-                value={formData.title}
+          value={formData.title}
                 onChange={handleInputChange}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
                   errors.title ? 'border-red-500' : 'border-gray-300'
                 }`}
-                placeholder="Brief description of the issue"
-              />
+          placeholder="Brief description of the issue"
+        />
               {errors.title && (
                 <p className="mt-1 text-sm text-red-600">{errors.title}</p>
               )}
-            </div>
+      </div>
 
             {/* Description */}
-            <div>
+      <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Detailed Description *
               </label>
-              <textarea
+        <textarea
                 name="description"
-                value={formData.description}
+          value={formData.description}
                 onChange={handleInputChange}
                 rows={4}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
@@ -407,15 +449,15 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
               {errors.description && (
                 <p className="mt-1 text-sm text-red-600">{errors.description}</p>
               )}
-            </div>
+      </div>
 
             {/* Category and Severity */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Category *
                 </label>
-                <select
+          <select
                   name="category"
                   value={formData.category}
                   onChange={handleInputChange}
@@ -424,12 +466,12 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   }`}
                 >
                   <option value="">Select Category</option>
-                  {categories.map(category => (
+            {categories.map(category => (
                     <option key={category} value={category}>
                       {categoryDisplayNames[category]}
                     </option>
-                  ))}
-                </select>
+            ))}
+          </select>
                 {errors.category && (
                   <p className="mt-1 text-sm text-red-600">{errors.category}</p>
                 )}
@@ -451,25 +493,25 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   <option value="critical">Critical</option>
                 </select>
               </div>
-            </div>
+        </div>
 
             {/* Location Section */}
-            <div>
+        <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Location *
               </label>
               
               {/* Location Capture Button */}
               <div className="mb-4">
-                <button
-                  type="button"
+              <button
+                type="button"
                   onClick={captureLocation}
                   disabled={isCapturingLocation}
                   className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Navigation className="h-4 w-4 mr-2" />
+              >
+                  <Crosshair className="h-4 w-4 mr-2" />
                   {isCapturingLocation ? 'Capturing...' : 'Capture My Location'}
-                </button>
+              </button>
                 
                 {/* Location Status */}
                 {getLocationStatusDisplay()}
@@ -481,13 +523,13 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   <div className="flex items-center text-green-800 mb-2">
                     <MapPin className="h-4 w-4 mr-2" />
                     <span className="font-medium">Location Captured</span>
-                  </div>
+          </div>
                   <div className="text-sm text-green-700 space-y-1">
                     <div><strong>Address:</strong> {formData.location.address}</div>
                     <div><strong>Zone:</strong> {zones.find(z => z.id === formData.location.zone)?.name}</div>
                     <div><strong>Coordinates:</strong> {formData.location.coordinates.lat.toFixed(6)}, {formData.location.coordinates.lng.toFixed(6)}</div>
-                  </div>
-                </div>
+        </div>
+      </div>
               )}
 
               {/* Squad Assignment Display */}
@@ -506,19 +548,19 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
               )}
 
               {/* Manual Address Input */}
-              <div>
+      <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Address (Optional - for verification)
                 </label>
-                <input
-                  type="text"
+          <input
+            type="text"
                   name="location.address"
                   value={formData.location.address}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   placeholder="Street address (optional)"
-                />
-              </div>
+          />
+        </div>
 
               {errors.location && (
                 <p className="mt-1 text-sm text-red-600">{errors.location}</p>
@@ -543,10 +585,10 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                   </option>
                 ))}
               </select>
-            </div>
+      </div>
 
             {/* Image Upload */}
-            <div>
+      <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Upload Images (Optional)
               </label>
@@ -554,32 +596,38 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                 <input
                   type="file"
                   multiple
-                  accept="image/*"
+                  accept="image/*,video/*,application/pdf"
                   onChange={handleFileUpload}
                   className="hidden"
-                  id="image-upload"
+                  id="file-upload"
                 />
-                <label htmlFor="image-upload" className="cursor-pointer">
+                <label htmlFor="file-upload" className="cursor-pointer">
                   <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600">
-                    Click to upload images or drag and drop
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Maximum 5 images, JPG, PNG, GIF up to 5MB each
-                  </p>
-                </label>
-              </div>
+                  <p className="text-sm text-gray-600">Click to upload images, videos, or PDFs or drag and drop</p>
+                  <p className="text-xs text-gray-500 mt-1">Maximum 5 files, JPG, PNG, GIF, MP4, PDF up to 10MB each</p>
+              </label>
+            </div>
 
               {/* Preview uploaded images */}
               {formData.images.length > 0 && (
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
                   {formData.images.map((image, index) => (
                     <div key={index} className="relative">
-                      <img
-                        src={URL.createObjectURL(image)}
-                        alt={`Preview ${index + 1}`}
-                        className="w-full h-24 object-cover rounded-lg"
-                      />
+                      {image.type.startsWith('image/') ? (
+                        <img
+                          src={URL.createObjectURL(image)}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg"
+                        />
+                      ) : (
+                        <div className="w-full h-24 flex items-center justify-center bg-gray-200 rounded-lg">
+                          {image.type.startsWith('video/') ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-gray-500"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0-3 3V6a3 3 0 1 0 3-3h12a3 3 0 1 0-3 3"></path></svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-gray-500"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+                          )}
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
@@ -587,11 +635,11 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
                       >
                         ×
                       </button>
-                    </div>
+          </div>
                   ))}
-                </div>
-              )}
-            </div>
+          </div>
+        )}
+      </div>
 
             {/* Error Message */}
             {submitError && (
@@ -609,15 +657,15 @@ const ComplaintForm = ({ onClose, onSuccess }) => {
               >
                 Cancel
               </button>
-              <button
-                type="submit"
+        <button
+          type="submit"
                 disabled={isSubmitting}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+        >
                 {isSubmitting ? 'Submitting...' : 'Submit Complaint'}
-              </button>
-            </div>
-          </form>
+        </button>
+      </div>
+    </form>
         </div>
       </div>
     </div>
