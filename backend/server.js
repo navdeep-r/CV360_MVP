@@ -112,7 +112,7 @@ const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ['status_update', 'escalation', 'comment', 'system', 'reminder'],
+    enum: ['status_update', 'escalation', 'comment', 'system', 'reminder', 'resolution'],
     default: 'system' 
   },
   read: { type: Boolean, default: false },
@@ -695,26 +695,20 @@ app.post('/api/complaints/:id/upvote', authenticateToken, async (req, res) => {
 
 // Progress Update Route
 app.put('/api/complaints/:id/progress', authenticateToken, upload.array('proofFiles', 5), async (req, res) => {
+  // Top-level debug log
+  console.log("Progress update route hit", req.method, req.url, req.body, req.files);
   try {
     const { progress, notes } = req.body;
     const complaint = await Complaint.findById(req.params.id);
-
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
     }
-
     // Check authorization - only assigned official, any official in assigned squad, or admin can update progress
     if (req.user.role === 'citizen') {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (req.user.role === 'official') {
       const user = await User.findById(req.user.userId);
-      console.log('DEBUG /api/complaints/:id/progress', {
-        userId: req.user.userId,
-        userSquad: user.squad,
-        complaintAssignedTo: complaint.assignedTo,
-        complaintAssignedSquad: complaint.assignedSquad
-      });
       if (
         complaint.assignedTo?.toString() !== req.user.userId &&
         (!complaint.assignedSquad || !user.squad || complaint.assignedSquad.toString() !== user.squad.toString())
@@ -725,7 +719,6 @@ app.put('/api/complaints/:id/progress', authenticateToken, upload.array('proofFi
 
     // Update progress
     complaint.progress = Math.min(100, Math.max(0, parseInt(progress) || 0));
-    
     // Update status based on progress
     if (complaint.progress >= 100) {
       complaint.status = 'resolved';
@@ -767,7 +760,10 @@ app.put('/api/complaints/:id/progress', authenticateToken, upload.array('proofFi
     complaint.updatedAt = new Date();
     await complaint.save();
 
-    res.json({
+    // Debug log before sending response
+    console.log("Returning progress update response", complaint._id, complaint.progress, complaint.status);
+    // Always return a JSON response
+    return res.json({
       message: 'Progress updated successfully',
       complaint
     });
@@ -2369,6 +2365,53 @@ app.post('/api/demo/setup', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// DEMO: Automated setup endpoint for squad, user, and complaint assignment
+app.post('/api/demo/full-setup', async (req, res) => {
+  try {
+    // 1. Create squad if not exists
+    let squad = await Squad.findOne({ code: 'alpha' });
+    if (!squad) {
+      squad = await Squad.create({
+        name: 'Alpha Squad',
+        code: 'alpha',
+        description: 'Default squad for testing',
+        assignedRegions: [],
+        members: [],
+        isActive: true,
+        createdAt: new Date()
+      });
+    }
+
+    // 2. Find first official user
+    const user = await User.findOne({ role: 'official' });
+    if (!user) {
+      return res.status(400).json({ error: 'No official user found. Please register an official first.' });
+    }
+    // Assign user to squad
+    user.squad = squad._id;
+    await user.save();
+
+    // 3. Find first complaint
+    const complaint = await Complaint.findOne();
+    if (!complaint) {
+      return res.status(400).json({ error: 'No complaint found. Please create a complaint first.' });
+    }
+    // Assign complaint to user and squad
+    complaint.assignedTo = user._id;
+    complaint.assignedSquad = squad._id;
+    await complaint.save();
+
+    res.json({
+      message: 'Automated setup complete!',
+      squadId: squad._id,
+      userId: user._id,
+      complaintId: complaint._id
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

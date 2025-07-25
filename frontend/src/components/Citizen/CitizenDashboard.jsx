@@ -16,6 +16,34 @@ const CitizenDashboard = ({ onNavigate }) => {
   const [resolvedComplaints, setResolvedComplaints] = useState([]);
   const [showResolutionNotification, setShowResolutionNotification] = useState(false);
   const [selectedResolvedComplaint, setSelectedResolvedComplaint] = useState(null);
+  const [shownResolvedIds, setShownResolvedIds] = useState(() => {
+    const stored = localStorage.getItem('shownResolvedIds');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  // Check for newly resolved complaints
+  useEffect(() => {
+    const unseenResolved = complaints.filter(
+      c =>
+        c.status === 'resolved' &&
+        c.updatedAt &&
+        new Date(c.updatedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000) &&
+        !shownResolvedIds.includes(c._id)
+    );
+
+    if (unseenResolved.length > 0) {
+      setSelectedResolvedComplaint(unseenResolved[0]);
+      setShowResolutionNotification(true);
+    } else {
+      setShowResolutionNotification(false);
+      setSelectedResolvedComplaint(null);
+    }
+  }, [complaints, shownResolvedIds]);
+
+  // Save shownResolvedIds to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('shownResolvedIds', JSON.stringify(shownResolvedIds));
+  }, [shownResolvedIds]);
 
   // Calculate stats
   const total = complaints.length;
@@ -23,20 +51,17 @@ const CitizenDashboard = ({ onNavigate }) => {
   const pending = complaints.filter(c => c.status === 'pending').length;
   const upvoted = complaints.filter(c => c.upvoted).length;
 
-  // Check for newly resolved complaints
-  useEffect(() => {
-    const newlyResolved = complaints.filter(c => 
-      c.status === 'resolved' && 
-      c.updatedAt && 
-      new Date(c.updatedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
-    );
-    
-    if (newlyResolved.length > 0 && !showResolutionNotification) {
-      setResolvedComplaints(newlyResolved);
-      setSelectedResolvedComplaint(newlyResolved[0]);
-      setShowResolutionNotification(true);
+  const handleCloseResolutionNotification = () => {
+    if (selectedResolvedComplaint) {
+      setShownResolvedIds(ids => {
+        const updated = [...ids, selectedResolvedComplaint._id];
+        localStorage.setItem('shownResolvedIds', JSON.stringify(updated));
+        return updated;
+      });
     }
-  }, [complaints, showResolutionNotification]);
+    setShowResolutionNotification(false);
+    setSelectedResolvedComplaint(null);
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -157,20 +182,12 @@ const CitizenDashboard = ({ onNavigate }) => {
         />
       )}
 
-      {/* Resolution Notification Modal */}
+      {/* Resolution Notification Popup */}
       {showResolutionNotification && selectedResolvedComplaint && (
         <ResolutionNotification
           complaint={selectedResolvedComplaint}
-          onClose={() => {
-            setShowResolutionNotification(false);
-            setSelectedResolvedComplaint(null);
-          }}
-          onRaiseNewTicket={() => {
-            setShowResolutionNotification(false);
-            setSelectedResolvedComplaint(null);
-            // Optionally navigate to complaints list
-            onNavigate && onNavigate('my-complaints');
-          }}
+          onClose={handleCloseResolutionNotification}
+          onRaiseNewTicket={handleCloseResolutionNotification}
         />
       )}
     </div>

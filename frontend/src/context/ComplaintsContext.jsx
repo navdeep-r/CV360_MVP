@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { api, API_BASE } from '../utils/api';
 
 const ComplaintsContext = createContext();
 
@@ -131,32 +132,28 @@ export const ComplaintsProvider = ({ children }) => {
     }
   ];
 
-  const API_BASE = 'http://localhost:5000/api';
-
   const fetchComplaints = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
       
-      if (!token) {
-        throw new Error('No authentication token found');
+      let response;
+      if (token) {
+        response = await api.get('/complaints', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } else {
+        response = await api.get('/public/complaints');
       }
 
-      const response = await fetch(`${API_BASE}/complaints`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
+      if (response.status !== 200) {
         if (response.status === 403) {
           throw new Error('Authentication failed. Please log in again.');
         }
-        throw new Error(`Failed to fetch complaints: ${response.status}`);
+        throw new Error('Failed to fetch complaints');
       }
 
-      const data = await response.json();
+      const data = response.data;
       const complaintsData = data.complaints || data;
       setComplaints(complaintsData);
       setError(null);
@@ -203,34 +200,21 @@ export const ComplaintsProvider = ({ children }) => {
         imageCount: complaintData.images?.length || 0
       });
 
-      const response = await fetch(`${API_BASE}/complaints`, {
-        method: 'POST',
+      const response = await api.post('/complaints', formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-        body: formData,
       });
 
       console.log('API Response status:', response.status);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+      if (response.status !== 200 && response.status !== 201) {
+        const errorData = response.data;
         console.error('API Error response:', errorData);
-        
-        if (response.status === 401) {
-          throw new Error('Authentication failed. Please log in again.');
-        } else if (response.status === 403) {
-          throw new Error('Access denied. You do not have permission to submit complaints.');
-        } else if (response.status === 400) {
-          throw new Error(errorData.error || 'Invalid complaint data. Please check your input.');
-        } else if (response.status === 500) {
-          throw new Error('Server error. Please try again later.');
-        } else {
-          throw new Error(errorData.error || `Failed to submit complaint (${response.status})`);
-        }
+        throw new Error('Failed to submit complaint');
       }
 
-      const result = await response.json();
+      const result = response.data;
       console.log('API Success response:', result);
       
       // Backend returns { message, complaint, aiSuggestion }
@@ -299,19 +283,17 @@ export const ComplaintsProvider = ({ children }) => {
         });
       }
 
-      const response = await fetch(`${API_BASE}/complaints/${complaintId}`, {
-        method: 'PUT',
+      const response = await api.put(`/complaints/${complaintId}`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-        body: formData,
       });
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to update complaint status');
       }
 
-      const result = await response.json();
+      const result = response.data;
       
       // Update the complaint in the shared list
       setComplaints(prev => 
@@ -358,7 +340,7 @@ export const ComplaintsProvider = ({ children }) => {
       const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('progress', progress);
-      if (notes) formData.append('comment', notes);
+      if (notes) formData.append('notes', notes); // FIX: use 'notes' not 'comment'
       if (files && files.length > 0) {
         // If progress is 100, send as resolutionMedia, else as progressMedia
         const field = progress >= 100 ? 'resolutionMedia' : 'progressMedia';
@@ -366,17 +348,17 @@ export const ComplaintsProvider = ({ children }) => {
           formData.append(field, file);
         });
       }
-      const response = await fetch(`${API_BASE}/complaints/${complaintId}/progress`, {
-        method: 'PUT',
+      const response = await api.put(`/complaints/${complaintId}/progress`, formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-        body: formData,
       });
-      if (!response.ok) {
+      if (response.status !== 200) {
+        console.error('Progress update failed:', response.status, response.data);
         throw new Error('Failed to update complaint progress');
       }
-      const result = await response.json();
+      const result = response.data;
+      console.log('Progress update result:', result);
       // Update the complaint in the shared list
       setComplaints(prev => 
         prev.map(complaint => 
@@ -448,19 +430,18 @@ export const ComplaintsProvider = ({ children }) => {
   const upvoteComplaint = async (complaintId) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/complaints/${complaintId}/upvote`, {
-        method: 'POST',
+      const response = await api.post(`/complaints/${complaintId}/upvote`, {}, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to upvote complaint');
       }
 
-      const result = await response.json();
+      const result = response.data;
       
       // Update the complaint in the shared list
       setComplaints(prev => 
@@ -491,18 +472,13 @@ export const ComplaintsProvider = ({ children }) => {
   const getComplaint = async (complaintId) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/complaints/${complaintId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await api.get(`/complaints/${complaintId}`);
 
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error('Failed to fetch complaint');
       }
 
-      return await response.json();
+      return response.data;
     } catch (err) {
       console.error('Error fetching complaint:', err);
       

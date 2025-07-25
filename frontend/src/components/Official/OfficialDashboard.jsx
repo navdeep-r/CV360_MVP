@@ -405,7 +405,9 @@ const OfficialDashboard = ({ user, region, onLogout }) => {
       setUpdateLoading(true);
       try {
         await updateComplaintProgress(modalComplaint._id, progress, notes, files);
-        handleCloseUpdate();
+        handleCloseUpdate(); // Only close after successful update
+      } catch (err) {
+        // Optionally handle error (e.g., show a message)
       } finally {
         setUpdateLoading(false);
       }
