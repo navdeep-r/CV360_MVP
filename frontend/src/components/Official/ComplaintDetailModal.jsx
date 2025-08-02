@@ -62,6 +62,8 @@ const ComplaintDetailModal = ({ complaint, onClose, onStatusUpdate }) => {
     setIsUpdating(true);
     try {
       await onStatusUpdate(complaint._id, newStatus, resolutionNotes, uploadedFiles);
+      // Close modal after successful update
+      onClose();
     } catch (error) {
       console.error('Error updating status:', error);
     } finally {

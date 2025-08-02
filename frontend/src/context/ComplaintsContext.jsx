@@ -342,10 +342,9 @@ export const ComplaintsProvider = ({ children }) => {
       formData.append('progress', progress);
       if (notes) formData.append('notes', notes); // FIX: use 'notes' not 'comment'
       if (files && files.length > 0) {
-        // If progress is 100, send as resolutionMedia, else as progressMedia
-        const field = progress >= 100 ? 'resolutionMedia' : 'progressMedia';
+        // Send files as proofFiles (matches backend expectation)
         files.forEach(file => {
-          formData.append(field, file);
+          formData.append('proofFiles', file);
         });
       }
       const response = await api.put(`/complaints/${complaintId}/progress`, formData, {
