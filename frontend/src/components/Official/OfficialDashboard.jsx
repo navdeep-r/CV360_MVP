@@ -7,6 +7,7 @@ import { saveAs } from 'file-saver';
 import { Camera, FileText, X } from 'lucide-react';
 import HeatmapVisualization from './HeatmapVisualization';
 import MapHeatmap from './MapHeatmap';
+import ComplaintDetailView from './ComplaintDetailView';
 
 const OfficialDashboard = ({ user, region, onLogout }) => {
   const [currentTab, setCurrentTab] = useState('dashboard');
@@ -527,20 +528,12 @@ const OfficialDashboard = ({ user, region, onLogout }) => {
               complaints={complaints}
               onRowClick={setSelectedComplaint}
             />
-            {/* Complaint Detail Modal stub */}
+            {/* Dynamic Complaint Detail View */}
             {selectedComplaint && (
-              <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-lg p-8 max-w-xl w-full relative">
-                  <button
-                    className="absolute top-2 right-2 text-gray-400 hover:text-gray-700 text-xl"
-                    onClick={() => setSelectedComplaint(null)}
-                  >
-                    &times;
-                  </button>
-                  <div className="text-lg font-bold mb-2">Complaint Details (Coming Soon)</div>
-                  <pre className="text-xs bg-gray-50 rounded p-2 overflow-x-auto max-h-96">{JSON.stringify(selectedComplaint, null, 2)}</pre>
-                </div>
-              </div>
+              <ComplaintDetailView
+                complaint={selectedComplaint}
+                onClose={() => setSelectedComplaint(null)}
+              />
             )}
           </>
         );
